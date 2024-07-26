@@ -37,7 +37,36 @@ class RecordService {
     return games;
   }
 
-  async updateRating(winnerId, loserId) {}
+  async getCompleteGameData(gameId) {
+    const [games] = await connection.query(
+      `SELECT g.*, 
+        COALESCE(u1.name, 'Guest') AS player1_name,
+        COALESCE(u2.name, 'Guest') AS player2_name
+        FROM game g
+        JOIN player p1 ON p1.game_id = g.game_id AND p1.color = 1
+        JOIN player p2 ON p2.game_id = g.game_id AND p2.color = 0
+        LEFT JOIN user u1 ON p1.user_id = u1.user_id
+        LEFT JOIN user u2 ON p2.user_id = u2.user_id
+        WHERE g.game_id = ?`,
+      [gameId]
+    );
+
+    const [moves] = await connection.query(
+      `SELECT m.*, p.color
+        FROM game g
+        JOIN player p ON p.game_id = g.game_id
+        JOIN move m ON m.player_id = p.player_id
+        WHERE g.game_id = ?
+        ORDER BY m.move_id`,
+      [gameId]
+    );
+
+    return { gameData: games[0], moves };
+  }
+
+  async updateRating(winnerId, loserId) {
+    await connection.query("CALL updateRatings(?, ?)", [winnerId, loserId]);
+  }
 }
 
 const recordService = new RecordService();

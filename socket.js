@@ -181,7 +181,13 @@ io.on("connection", (socket) => {
           : winner === 0
           ? "Black won!"
           : "Draw!";
-        await gameService.endGame(gameData.game_id, winner);
+
+        await gameService.endGame(
+          gameData.game_id,
+          winner,
+          gameData.user1_id,
+          gameData.user2_id
+        );
 
         await proposePlayAgain(
           gameData.game_id,

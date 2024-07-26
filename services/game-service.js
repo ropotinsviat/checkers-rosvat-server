@@ -6,6 +6,7 @@ import {
 } from "../game-engine/db-room-convertor.js";
 import { handleMove } from "../game-engine/handle-move.js";
 import ApiError from "../exceptions/api-error.js";
+import recordService from "./record-service.js";
 
 class GameService {
   async getGameIdForPlayer(playerId) {
@@ -25,7 +26,9 @@ class GameService {
 
   async getGameData(gameId) {
     const [resGameData] = await connection.query(
-      `SELECT r.*, g.*, p1.player_id AS player1_id,  p2.player_id AS player2_id,
+      `SELECT r.*, g.*, 
+        p1.player_id AS player1_id,  p2.player_id AS player2_id,
+        u1.user_id AS user1_id, u2.user_id AS user2_id, 
         COALESCE(u1.name, 'Guest') AS player1_name,
         COALESCE(u2.name, 'Guest') AS player2_name,
         TIMESTAMPDIFF(SECOND, r.last_move_tst, NOW()) AS takenTime
@@ -48,11 +51,15 @@ class GameService {
     return resGameData[0];
   }
 
-  async endGame(gameId, winner) {
+  async endGame(gameId, winnerColor, whiteId, blackId) {
     await connection.query(
       `UPDATE game SET end_time = NOW(), winner_color = ? WHERE game_id = ?`,
-      [winner, gameId]
+      [winnerColor, gameId]
     );
+
+    if (winnerColor === 1) await recordService.updateRating(whiteId, blackId);
+    else if (winnerColor === 0)
+      await recordService.updateRating(blackId, whiteId);
 
     await connection.query(`DELETE FROM room WHERE game_id = ?`, [gameId]);
   }

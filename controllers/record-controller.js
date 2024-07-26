@@ -10,7 +10,7 @@ class RecordController {
     res.json({ rating });
   }
 
-  async getMatchHistory(req, res) {
+  async getMatchHistory(req, res, next) {
     try {
       const authHeader = req.headers["authorization"];
       const token = authHeader && authHeader.split(" ")[1];
@@ -19,8 +19,18 @@ class RecordController {
       const { user } = jwt.verify(token, config.tokenSecret);
       const games = await recordService.getUserGames(user.userId);
       res.json({ games });
-    } catch (err) {
-      res.json({ loggedIn: false });
+    } catch (e) {
+      next(e);
+    }
+  }
+
+  async getCompleteGameData(req, res, next) {
+    try {
+      const gameId = req.query.gameId;
+      const completeGameData = await recordService.getCompleteGameData(gameId);
+      res.json({ completeGameData });
+    } catch (e) {
+      next(e);
     }
   }
 }

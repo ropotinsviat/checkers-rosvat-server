@@ -13,6 +13,7 @@ app.use(cookieParser());
 app.use("/auth", router);
 app.use("/rating", recordController.getRatings);
 app.use("/games", recordController.getMatchHistory);
+app.use("/gameData", recordController.getCompleteGameData);
 app.use("/userData", userController.getUserData);
 app.use("/setName", userController.setUserName);
 app.use(errorMiddleware);
