@@ -271,6 +271,13 @@ io.on("connection", (socket) => {
       await roomService.deleteRoom(socket.roomId);
       console.log("user disconected and room deleted");
     }
+    if (socket.playerId) {
+      const gameId = await roomService.cancelGameIfNotStarted(socket.playerId);
+      if (gameId)
+        io.to(gameId).emit("alert", {
+          message: "Opponent left and game was canceled! You can leave.",
+        });
+    }
     const idx = queue.indexOf(socket);
     if (idx !== -1) queue.splice(idx, 1);
   });

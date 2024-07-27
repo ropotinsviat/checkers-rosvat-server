@@ -134,6 +134,24 @@ class RoomService {
 
     return gameData;
   }
+
+  async cancelGameIfNotStarted(playerId) {
+    try {
+      const gameId = await gameService.getGameIdForPlayer(playerId);
+      const gameData = await gameService.getGameData(gameId);
+      if (gameData.start_time === null) {
+        await connection.query(`DELETE FROM player WHERE game_id = ?`, [
+          gameId,
+        ]);
+        await connection.query(`DELETE FROM room WHERE game_id = ?`, [gameId]);
+        await connection.query(`DELETE FROM game WHERE game_id = ?`, [gameId]);
+        return gameId;
+      }
+    } catch (e) {
+      console.log(e);
+    }
+    return false;
+  }
 }
 
 const roomService = new RoomService();
