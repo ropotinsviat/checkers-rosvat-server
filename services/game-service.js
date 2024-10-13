@@ -6,7 +6,6 @@ import {
 } from "../game-engine/db-room-convertor.js";
 import { handleMove } from "../game-engine/handle-move.js";
 import ApiError from "../exceptions/api-error.js";
-import recordService from "./record-service.js";
 
 class GameService {
   async getGameIdForPlayer(playerId) {
@@ -18,7 +17,7 @@ class GameService {
       [playerId]
     );
 
-    if (res.length > 0) return res[0].game_id;
+    if (res.length) return res[0].game_id;
     throw ApiError.BadRequest(
       `Couldn't find gameId for player with id: ${playerId}`
     );
@@ -42,34 +41,24 @@ class GameService {
       [gameId]
     );
 
-    if (resGameData[0].start_time !== null) {
-      if (resGameData[0].turn === 1)
-        resGameData[0].white_timer += resGameData[0].takenTime;
-      else resGameData[0].black_timer += resGameData[0].takenTime;
-    }
+    if (resGameData[0].turn === 1)
+      resGameData[0].white_timer += resGameData[0].takenTime;
+    else resGameData[0].black_timer += resGameData[0].takenTime;
 
     return resGameData[0];
   }
 
-  async endGame(gameId, winnerColor, whiteId, blackId) {
+  async endGame(gameId, winnerColor) {
     await connection.query(
       `UPDATE game SET end_time = NOW(), winner_color = ? WHERE game_id = ?`,
       [winnerColor, gameId]
     );
-
-    if (winnerColor === 1) await recordService.updateRating(whiteId, blackId);
-    else if (winnerColor === 0)
-      await recordService.updateRating(blackId, whiteId);
-
     await connection.query(`DELETE FROM room WHERE game_id = ?`, [gameId]);
   }
 
   async move(playerId, move) {
     const gameId = await gameService.getGameIdForPlayer(playerId);
     const gameData = await gameService.getGameData(gameId);
-
-    if (gameData.start_time === null)
-      throw ApiError.BadRequest("The game hasn't been started yet");
 
     if (
       ((playerId === gameData.player1_id && gameData.turn === 1) ||

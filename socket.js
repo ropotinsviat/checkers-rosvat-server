@@ -6,8 +6,8 @@ import jwt from "jsonwebtoken";
 import gameService from "./services/game-service.js";
 import roomService from "./services/room-service.js";
 import parseDataForPlayer from "./utils/parseDataForPlayer.js";
-import validator from "./utils/validator.js";
 import cors from "cors";
+
 const app = express();
 
 app.use(
@@ -34,56 +34,25 @@ io.use((socket, next) => {
       const { user } = jwt.verify(token, config.tokenSecret);
       socket.user = user;
     }
-  } catch (err) {
-    console.error("Error occurred while socket auth " + err);
-  }
+  } catch {}
   next();
 });
 
-const queue = [],
-  replay = [];
+const queue = [];
 
 io.on("connection", (socket) => {
-  const startGame = async (p2, p1, gameId) => {
+  const startGame = async (p2, p1) => {
     const id1 = (p1.user && p1.user.userId) || null;
     const id2 = (p2.user && p2.user.userId) || null;
-    const { token1, token2 } = await roomService.createPlayers(
-      id1,
-      id2,
-      gameId
-    );
+    const { token1, token2 } = await roomService.createPlayers(id1, id2);
     p1.emit("setPlayerToken", { playerToken: token1 });
     p2.emit("setPlayerToken", { playerToken: token2 });
-  };
-
-  const proposePlayAgain = async (gameId, player1Id, player2Id) => {
-    const socketsInRoom = io.sockets.adapter.rooms.get(gameId);
-    let p1, p2;
-    if (socketsInRoom)
-      for (const socketId of socketsInRoom) {
-        const socket = io.sockets.sockets.get(socketId);
-
-        if (socket.playerId === player1Id) p1 = socket;
-        else if (socket.playerId === player2Id) p2 = socket;
-
-        if (p1 && p2) {
-          const replayItem = [{ socket: p1 }, { socket: p2 }];
-          replay.push(replayItem);
-
-          setTimeout(() => {
-            const idx = replay.indexOf(replayItem);
-            if (idx !== -1) replay.splice(idx, 1);
-          }, 10000);
-
-          break;
-        }
-      }
   };
 
   const proposeDraw = (gameId, playerId) => {
     return new Promise((resolve) => {
       const socketsInRoom = io.sockets.adapter.rooms.get(gameId);
-      if (socketsInRoom) {
+      if (socketsInRoom)
         for (const socketId of socketsInRoom) {
           const socket = io.sockets.sockets.get(socketId);
 
@@ -94,8 +63,39 @@ io.on("connection", (socket) => {
             return;
           }
         }
-      }
       resolve(false);
+    });
+  };
+
+  const proposePlayAgain = async (gameId) => {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve({ agreed: false }), 10000);
+
+      const socketsInRoom = io.sockets.adapter.rooms.get(gameId);
+
+      if (!socketsInRoom || !socketsInRoom.size)
+        return resolve({ agreed: false });
+
+      const playerPromises = [];
+      const sockets = [];
+
+      for (const socketId of socketsInRoom) {
+        const socket = io.sockets.sockets.get(socketId);
+        sockets.push(socket);
+
+        playerPromises.push(
+          new Promise((res) =>
+            socket.emit("playAgain", (callback) => {
+              res(callback);
+              if (!callback) resolve({ agreed: false });
+            })
+          )
+        );
+      }
+
+      Promise.all(playerPromises).then((responses) =>
+        resolve({ agreed: responses.every(Boolean), sockets })
+      );
     });
   };
 
@@ -127,9 +127,7 @@ io.on("connection", (socket) => {
       socket.playerId = playerId;
       socket.join(gameId);
 
-      const role = gameData.player1_id === playerId ? "white" : "black";
-
-      callback({ role });
+      callback({ isWhite: gameData.player1_id === playerId });
 
       socket.emit("getGameData", parseDataForPlayer(gameData));
     } catch (err) {
@@ -138,15 +136,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("ready", async (data) => {
-    try {
-      const gameData = await roomService.setReady(socket.playerId, data.ready);
-      io.to(gameData.game_id).emit("getGameData", parseDataForPlayer(gameData));
-    } catch (err) {
-      console.error("Error when tried to ready " + err);
-    }
-  });
-  // gameAction
   socket.on("move", async (data) => {
     try {
       const gameData = await gameService.move(socket.playerId, data.move);
@@ -182,102 +171,25 @@ io.on("connection", (socket) => {
           ? "Black won!"
           : "Draw!";
 
-        await gameService.endGame(
-          gameData.game_id,
-          winner,
-          gameData.user1_id,
-          gameData.user2_id
-        );
-
-        await proposePlayAgain(
-          gameData.game_id,
-          gameData.player1_id,
-          gameData.player2_id
-        );
+        await gameService.endGame(gameData.game_id, winner);
       }
 
       io.to(gameData.game_id).emit("getGameData", update);
 
-      if (winner !== undefined)
+      if (winner !== undefined) {
+        const { agreed, sockets } = await proposePlayAgain(gameData.game_id);
+        if (agreed) {
+          io.in(gameData.game_id).socketsLeave(gameData.game_id);
+          return await startGame(...sockets);
+        } else io.to(gameData.game_id).emit("leave");
         io.in(gameData.game_id).socketsLeave(gameData.game_id);
+      }
     } catch (err) {
       console.error("Error when tried to make move " + err);
     }
   });
 
-  socket.on("replay", async () => {
-    try {
-      for (let i = 0; i < replay.length; i++)
-        if (replay[i][0].socket === socket) {
-          replay[i][0].wantReplay = true;
-          if (replay[i][0].wantReplay && replay[i][1].wantReplay)
-            return await startGame(replay[i][0].socket, replay[i][1].socket);
-        } else if (replay[i][1].socket === socket) {
-          replay[i][1].wantReplay = true;
-          if (replay[i][0].wantReplay && replay[i][1].wantReplay)
-            return await startGame(replay[i][0].socket, replay[i][1].socket);
-        }
-    } catch (err) {
-      console.error("Error when tried to replay " + err);
-    }
-  });
-
-  socket.on("createRoom", async (data, callback) => {
-    try {
-      if (!data || typeof data !== "object") throw new Error("Incorrect data");
-
-      validator.checkName(data.name);
-      validator.checkPassword(data.password);
-      validator.checkTimeLimit(data.timeLimit);
-
-      const { gameId, roomId } = await roomService.createRoom(
-        data.name,
-        data.password,
-        data.timeLimit
-      );
-      socket.roomId = roomId;
-      callback(true);
-    } catch (err) {
-      console.log(err.message);
-      socket.emit("alert", { message: err.message });
-    }
-  });
-
-  socket.on("joinRoom", async (data) => {
-    try {
-      if (!data || typeof data !== "object") throw new Error("Incorrect data");
-
-      validator.checkName(data.name);
-      validator.checkPassword(data.password);
-
-      const { gameId, roomId } = await roomService.findRoom(
-        data.name,
-        data.password
-      );
-      const owner = Array.from(io.sockets.sockets.values()).find(
-        (s) => s.roomId === roomId
-      );
-      if (owner) {
-        delete owner.roomId;
-        startGame(socket, owner, gameId);
-      } else throw new Error("Owner deleted the room!");
-    } catch (err) {
-      socket.emit("alert", { message: err.message });
-    }
-  });
-
   socket.on("disconnect", async () => {
-    if (socket.roomId) {
-      await roomService.deleteRoom(socket.roomId);
-      console.log("user disconected and room deleted");
-    }
-    if (socket.playerId) {
-      const gameId = await roomService.cancelGameIfNotStarted(socket.playerId);
-      if (gameId)
-        io.to(gameId).emit("alert", {
-          message: "Opponent left and game was canceled! You can leave.",
-        });
-    }
     const idx = queue.indexOf(socket);
     if (idx !== -1) queue.splice(idx, 1);
   });

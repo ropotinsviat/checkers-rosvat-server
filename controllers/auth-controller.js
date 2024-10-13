@@ -58,9 +58,9 @@ class AuthController {
         expiresIn: config.tokenExpiration,
       });
 
-      res.json({ loggedIn: true, user, newToken });
+      res.json({ user, newToken });
     } catch (e) {
-      res.json({ loggedIn: false });
+      res.end();
     }
   }
 }

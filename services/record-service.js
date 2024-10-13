@@ -1,22 +1,6 @@
 import connection from "../db.js";
 
 class RecordService {
-  async getRating() {
-    const [rating] = await connection.query(
-      `SELECT u.name, u.score,
-        SUM(CASE WHEN g.winner_color = p.color THEN 1 ELSE 0 END) AS wins,
-        SUM(CASE WHEN g.winner_color IS NOT NULL AND g.winner_color != p.color THEN 1 ELSE 0 END) AS losses,
-        SUM(CASE WHEN g.game_id IS NOT NULL AND g.winner_color IS NULL THEN 1 ELSE 0 END) AS draws
-      FROM user u
-      LEFT JOIN player p ON u.user_id = p.user_id
-      LEFT JOIN game g ON p.game_id = g.game_id AND g.end_time IS NOT NULL
-      GROUP BY u.user_id
-      ORDER BY u.score DESC`
-    );
-
-    return rating;
-  }
-
   async getUserGames(userId) {
     const [games] = await connection.query(
       `SELECT g.*, COUNT(m.move_id) AS moves_count,
@@ -62,10 +46,6 @@ class RecordService {
     );
 
     return { gameData: games[0], moves };
-  }
-
-  async updateRating(winnerId, loserId) {
-    await connection.query("CALL updateRatings(?, ?)", [winnerId, loserId]);
   }
 }
 

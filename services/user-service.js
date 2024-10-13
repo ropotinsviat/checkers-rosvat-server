@@ -23,23 +23,6 @@ class UserService {
     if (users.length > 0) return users[0].user_id;
     return null;
   }
-
-  async getUserData(userId) {
-    const [users] = await connection.query(
-      "SELECT * FROM user WHERE user_id = ?",
-      [userId]
-    );
-
-    if (users.length > 0) return users[0];
-    return null;
-  }
-
-  async setUserName(userId, name) {
-    await connection.query(`UPDATE user SET name = ? WHERE user_id = ?`, [
-      name,
-      userId,
-    ]);
-  }
 }
 
 const userService = new UserService();
